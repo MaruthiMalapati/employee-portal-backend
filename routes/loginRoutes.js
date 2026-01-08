@@ -54,7 +54,7 @@ router.post("/", async (req, res) => {
         role: employee.role
       },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN }
+      { expiresIn: "8h" }
     );
 
     // 4. Log login
