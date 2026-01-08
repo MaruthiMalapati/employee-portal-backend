@@ -3,8 +3,8 @@ const generateMorningReport = require("../reports/morningAttendanceReport");
 const { sendMailWithAttachment } = require("../utils/emailService");
 const attendanceTemplate = require("../utils/attendanceEmailTemplate");
 
-const MANAGER_EMAIL = process.env.MANAGER_EMAIL;
-
+const MANAGER_EMAILS = process.env.MANAGER_EMAILS;
+const recipients = MANAGER_EMAILS.split(",").map(e => e.trim());
 cron.schedule("10 10 * * *", async () => {
   try {
     console.log("Running morning attendance report");
@@ -14,7 +14,7 @@ cron.schedule("10 10 * * *", async () => {
     const filePath = await generateMorningReport(today);
 
     await sendMailWithAttachment(
-      MANAGER_EMAIL,
+      recipients,
       `Morning Attendance Report – ${today}`,
       attendanceTemplate(today),
       filePath
