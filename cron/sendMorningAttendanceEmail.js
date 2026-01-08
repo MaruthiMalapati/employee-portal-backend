@@ -5,7 +5,7 @@ const attendanceTemplate = require("../utils/attendanceEmailTemplate");
 
 const MANAGER_EMAILS = process.env.MANAGER_EMAILS;
 const recipients = MANAGER_EMAILS.split(",").map(e => e.trim());
-cron.schedule("50 15 * * *", async () => {
+cron.schedule("15 10 * * *", async () => {
   try {
     console.log("Running morning attendance report");
 
@@ -25,8 +25,5 @@ cron.schedule("50 15 * * *", async () => {
   } catch (err) {
     console.error("Morning attendance failed:", err);
   }
-},
- {
-    timezone: "Asia/Kolkata"
-  }
+}
 );
