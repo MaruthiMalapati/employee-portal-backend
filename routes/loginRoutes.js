@@ -64,18 +64,18 @@ router.post("/", async (req, res) => {
     });
 
     // 5. Send login email (optional, keep if already added)
-    if (employee.manager_email) {
-      const loginTime = new Date().toLocaleString();
-      await sendMail(
-        employee.manager_email,
-        `Employee Login Notification – ${employee.name}`,
-        loginEmailTemplate({
-          employeeName: employee.name,
-          username: employee.username,
-          loginTime
-        })
-      );
-    }
+    // if (employee.manager_email) {
+    //   const loginTime = new Date().toLocaleString();
+    //   await sendMail(
+    //     employee.manager_email,
+    //     `Employee Login Notification – ${employee.name}`,
+    //     loginEmailTemplate({
+    //       employeeName: employee.name,
+    //       username: employee.username,
+    //       loginTime
+    //     })
+    //   );
+    // }
 
     // 6. RESPONSE (token NOW EXISTS)
     return res.json({
@@ -144,21 +144,21 @@ router.post("/logout", authenticate, async (req, res) => {
       .eq("id", activeLog.id);
 
     // 4. Send manager email
-    if (employee.manager_email) {
+//     if (employee.manager_email) {
 
 
-await sendMail(
-  employee.manager_email,
-  `Employee Logout Notification – ${employee.name}`,
-  logoutEmailTemplate({
-    employeeName: employee.name,
-    username: employee.username,
-    loginTime: new Date(activeLog.login_time).toLocaleString(),
-    logoutTime: new Date().toLocaleString()
-  })
-);
+// await sendMail(
+//   employee.manager_email,
+//   `Employee Logout Notification – ${employee.name}`,
+//   logoutEmailTemplate({
+//     employeeName: employee.name,
+//     username: employee.username,
+//     loginTime: new Date(activeLog.login_time).toLocaleString(),
+//     logoutTime: new Date().toLocaleString()
+//   })
+// );
 
-    }
+//     }
 
     return res.json({
       success: true,
