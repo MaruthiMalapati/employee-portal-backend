@@ -21,15 +21,12 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // 1. Fetch employee (username OR email)
     const { data: employee, error } = await supabase
       .from("employees")
-      .select("id, name, username, email, password_hash, manager_email, role, is_active")
+      .select("id, name, username, password_hash, role, is_active")
       .or(`username.eq.${username},email.eq.${username}`)
       .eq("is_active", true)
       .single();
-
-      
 
     if (error || !employee) {
       return res.status(401).json({
@@ -38,9 +35,7 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // 2. Compare password
     const isMatch = await bcrypt.compare(password, employee.password_hash);
-
     if (!isMatch) {
       return res.status(401).json({
         success: false,
@@ -48,48 +43,55 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // 3. CREATE TOKEN (THIS WAS MISSING / MISPLACED)
+    // JWT
     const token = jwt.sign(
       {
         employeeId: employee.id,
-        username: employee.username,
         role: employee.role
       },
       process.env.JWT_SECRET,
       { expiresIn: "8h" }
     );
 
-    // 4. Log login
-await supabase.from("login_logs").insert({
-  employee_id: employee.id,
-  login_time: new Date().toISOString(), // ALWAYS UTC
-  ip_address: req.ip,
-  user_agent: req.headers["user-agent"] || null
-});
+    const nowUTC = new Date().toISOString();
 
+    // Login log (AUDIT ONLY)
+    await supabase.from("login_logs").insert({
+      employee_id: employee.id,
+      login_time: nowUTC,
+      ip_address: req.ip,
+      user_agent: req.headers["user-agent"] || null
+    });
 
-    // 5. Send login email (optional, keep if already added)
-    // if (employee.manager_email) {
-    //   const loginTime = new Date().toLocaleString();
-    //   await sendMail(
-    //     employee.manager_email,
-    //     `Employee Login Notification – ${employee.name}`,
-    //     loginEmailTemplate({
-    //       employeeName: employee.name,
-    //       username: employee.username,
-    //       loginTime
-    //     })
-    //   );
-    // }
+    // Attendance logic
+    const todayIST = new Date().toLocaleDateString("en-CA", {
+      timeZone: "Asia/Kolkata"
+    });
 
-    // 6. RESPONSE (token NOW EXISTS)
+    // Check existing attendance
+    const { data: existingAttendance } = await supabase
+      .from("attendance")
+      .select("id, first_login_time")
+      .eq("employee_id", employee.id)
+      .eq("attendance_date", todayIST)
+      .single();
+
+    if (!existingAttendance) {
+      // FIRST login of the day
+      await supabase.from("attendance").insert({
+        employee_id: employee.id,
+        attendance_date: todayIST,
+        first_login_time: nowUTC,
+        status: "Present" // later you can compute Late here
+      });
+    }
+
     return res.json({
       success: true,
       message: "Login successful",
       token,
       employee: {
         name: employee.name,
-        username: employee.username,
         role: employee.role
       }
     });
@@ -102,6 +104,7 @@ await supabase.from("login_logs").insert({
     });
   }
 });
+
 
 
 
@@ -184,48 +187,45 @@ await supabase.from("login_logs").insert({
 router.post("/logout", authenticate, async (req, res) => {
   try {
     const employeeId = req.user.employeeId;
+    const nowUTC = new Date().toISOString();
 
-    // Close latest active session
-    const { data, error } = await supabase
+    // Close ONLY latest active login
+    const { data: activeLog } = await supabase
       .from("login_logs")
-      .update({
-        logout_time: new Date().toISOString(), // UTC
-        logout_type: "manual"
-      })
+      .select("id")
       .eq("employee_id", employeeId)
-      .is("logout_time", null);
+      .is("logout_time", null)
+      .order("login_time", { ascending: false })
+      .limit(1)
+      .single();
 
-    if (error) {
-      console.error("Logout update error:", error);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to logout"
-      });
-    }
-
-    if (!data || data.length === 0) {
+    if (!activeLog) {
       return res.status(400).json({
         success: false,
         message: "No active session found"
       });
     }
-       // 4. Send manager email
-//     if (employee.manager_email) {
 
+    await supabase
+      .from("login_logs")
+      .update({
+        logout_time: nowUTC,
+        logout_type: "manual"
+      })
+      .eq("id", activeLog.id);
 
-// await sendMail(
-//   employee.manager_email,
-//   `Employee Logout Notification – ${employee.name}`,
-//   logoutEmailTemplate({
-//     employeeName: employee.name,
-//     username: employee.username,
-//     loginTime: new Date(activeLog.login_time).toLocaleString(),
-//     logoutTime: new Date().toLocaleString()
-//   })
-// );
+    // Update attendance last logout
+    const todayIST = new Date().toLocaleDateString("en-CA", {
+      timeZone: "Asia/Kolkata"
+    });
 
-//     }
-
+    await supabase
+      .from("attendance")
+      .update({
+        last_logout_time: nowUTC
+      })
+      .eq("employee_id", employeeId)
+      .eq("attendance_date", todayIST);
 
     return res.json({
       success: true,
@@ -240,6 +240,7 @@ router.post("/logout", authenticate, async (req, res) => {
     });
   }
 });
+
 
 router.get("/employee-session-status", authenticate, async (req, res) => {
   try {

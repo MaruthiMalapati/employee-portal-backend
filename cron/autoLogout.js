@@ -1,65 +1,196 @@
 // const cron = require("node-cron");
 // const supabase = require("../supabaseClient");
 
-// cron.schedule("30 18 * * *", async () => {
+// /**
+//  * Get today's date in IST (YYYY-MM-DD)
+//  */
+// function getTodayISTDate() {
+//   return new Date().toLocaleDateString("en-CA", {
+//     timeZone: "Asia/Kolkata"
+//   });
+// }
+
+// /**
+//  * Auto logout all active sessions at 6:30 PM IST
+//  * 6:30 PM IST = 13:00 UTC
+//  */
+// cron.schedule("0 13 * * *", async () => {
 //   try {
-//     console.log("Running auto logout job at 6:30 PM");
+//     console.log("⏰ Running auto-logout cron (6:30 PM IST)");
 
-//     const logoutTime = new Date();
+//     const nowUTC = new Date().toISOString();
+//     const todayIST = getTodayISTDate();
 
-//     // Find all active login sessions (no logout_time)
-//     const { data: activeSessions, error } = await supabase
+//     // 1️⃣ Close all active login sessions
+//     const { error: logoutError } = await supabase
 //       .from("login_logs")
-//       .select("id")
+//       .update({
+//         logout_time: nowUTC,
+//         logout_type: "auto"
+//       })
 //       .is("logout_time", null);
 
-//     if (error) throw error;
-
-//     if (!activeSessions || activeSessions.length === 0) {
-//       console.log("No active sessions to logout");
-//       return; 
+//     if (logoutError) {
+//       console.error("❌ Auto logout failed:", logoutError);
+//       return;
 //     }
 
-//     // Update logout_time for all active sessions
-//     for (const session of activeSessions) {
-//       await supabase
-//         .from("login_logs")
-//         .update({ logout_time: logoutTime })
-//         .eq("id", session.id);
+//     // 2️⃣ Update attendance last_logout_time
+//     const { error: attendanceError } = await supabase
+//       .from("attendance")
+//       .update({
+//         last_logout_time: nowUTC
+//       })
+//       .eq("attendance_date", todayIST)
+//       .is("last_logout_time", null);
+
+//     if (attendanceError) {
+//       console.error("❌ Attendance auto-logout update failed:", attendanceError);
+//       return;
 //     }
 
-//     console.log(`Auto logout completed for ${activeSessions.length} sessions`);
+//     console.log("✅ Auto-logout completed successfully");
 
 //   } catch (err) {
-//     console.error("Auto logout failed:", err);
+//     console.error("❌ Auto logout cron error:", err);
 //   }
 // });
+
 
 
 const cron = require("node-cron");
 const supabase = require("../supabaseClient");
 
-// Runs at 6:30 PM IST (13:00 UTC)
-cron.schedule("30 18 * * *", async () => {
+/**
+ * Get today's date in IST (YYYY-MM-DD)
+ */
+function getTodayISTDate() {
+  return new Date().toLocaleDateString("en-CA", {
+    timeZone: "Asia/Kolkata"
+  });
+}
+
+/**
+ * Get IST day window in UTC
+ */
+function getISTDayWindowUTC(date) {
+  const startIST = new Date(`${date}T00:00:00`);
+  const endIST = new Date(`${date}T23:59:59`);
+  const offset = 5.5 * 60 * 60 * 1000;
+
+  return {
+    startUTC: new Date(startIST.getTime() - offset).toISOString(),
+    endUTC: new Date(endIST.getTime() - offset).toISOString()
+  };
+}
+
+/**
+ * Calculate working hours from sessions
+ */
+function calculateWorkingHours(sessions) {
+  let totalMs = 0;
+
+  sessions.forEach(s => {
+    if (s.login_time && s.logout_time) {
+      totalMs += new Date(s.logout_time) - new Date(s.login_time);
+    }
+  });
+
+  return Number((totalMs / (1000 * 60 * 60)).toFixed(2));
+}
+
+/**
+ * Auto logout + finalize working hours
+ * 6:30 PM IST = 13:00 UTC
+ */
+cron.schedule("0 13 * * *", async () => {
   try {
     console.log("⏰ Running auto-logout cron (6:30 PM IST)");
 
-    const { data, error } = await supabase
+    const nowUTC = new Date().toISOString();
+    const todayIST = getTodayISTDate();
+    const { startUTC, endUTC } = getISTDayWindowUTC(todayIST);
+
+    /**
+     * 1️⃣ Close all active sessions
+     */
+    const { error: logoutError } = await supabase
       .from("login_logs")
       .update({
-        logout_time: new Date().toISOString(), // UTC
+        logout_time: nowUTC,
         logout_type: "auto"
       })
       .is("logout_time", null);
 
-    if (error) {
-      console.error("Auto logout failed:", error);
+    if (logoutError) {
+      console.error("❌ Auto logout failed:", logoutError);
       return;
     }
 
-    console.log(`✅ Auto-logged out  sessions`);
+    /**
+     * 2️⃣ Update attendance last_logout_time
+     */
+    const { error: attendanceLogoutError } = await supabase
+      .from("attendance")
+      .update({
+        last_logout_time: nowUTC
+      })
+      .eq("attendance_date", todayIST)
+      .is("last_logout_time", null);
+
+    if (attendanceLogoutError) {
+      console.error("❌ Attendance logout update failed:", attendanceLogoutError);
+      return;
+    }
+
+    /**
+     * 3️⃣ Fetch today's login sessions
+     */
+    const { data: logs, error: logsError } = await supabase
+      .from("login_logs")
+      .select("employee_id, login_time, logout_time")
+      .gte("login_time", startUTC)
+      .lte("login_time", endUTC);
+
+    if (logsError) {
+      console.error("❌ Fetch login logs failed:", logsError);
+      return;
+    }
+
+    /**
+     * 4️⃣ Group sessions by employee
+     */
+    const sessionsByEmployee = {};
+    logs.forEach(log => {
+      if (!sessionsByEmployee[log.employee_id]) {
+        sessionsByEmployee[log.employee_id] = [];
+      }
+      sessionsByEmployee[log.employee_id].push(log);
+    });
+
+    /**
+     * 5️⃣ Update working hours in attendance
+     */
+    const { data: attendance } = await supabase
+      .from("attendance")
+      .select("employee_id")
+      .eq("attendance_date", todayIST);
+
+    for (const row of attendance) {
+      const sessions = sessionsByEmployee[row.employee_id] || [];
+      const hours = calculateWorkingHours(sessions);
+
+      await supabase
+        .from("attendance")
+        .update({ working_hours: hours })
+        .eq("employee_id", row.employee_id)
+        .eq("attendance_date", todayIST);
+    }
+
+    console.log("✅ Auto-logout & working hours finalized");
 
   } catch (err) {
-    console.error("Auto logout cron error:", err);
+    console.error("❌ Auto logout cron error:", err);
   }
 });
+

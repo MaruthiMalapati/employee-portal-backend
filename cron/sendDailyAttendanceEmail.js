@@ -1,29 +1,44 @@
+
+
+
 const cron = require("node-cron");
 const generateReport = require("../reports/dailyAttendanceReport");
-const {sendMailWithAttachment } = require("../utils/emailService");
+const { sendMailWithAttachment } = require("../utils/emailService");
 const attendanceTemplate = require("../utils/attendanceEmailTemplate");
+
+/**
+ * Get today's date in IST (YYYY-MM-DD)
+ */
+function getTodayISTDate() {
+  return new Date().toLocaleDateString("en-CA", {
+    timeZone: "Asia/Kolkata"
+  });
+}
 
 const MANAGER_EMAILS = process.env.MANAGER_EMAILS;
 const recipients = MANAGER_EMAILS.split(",").map(e => e.trim());
 
-cron.schedule("35 18 * * *", async () => {
+/**
+ * 6:35 PM IST = 13:05 UTC
+ */
+cron.schedule("5 13 * * *", async () => {
   try {
-    console.log("Running daily attendance email job");
+    console.log("📧 Running evening attendance email job");
 
-    const today = new Date().toISOString().split("T")[0];
+    const todayIST = getTodayISTDate();
 
-    const filePath = await generateReport(today);
+    const filePath = await generateReport(todayIST);
 
     await sendMailWithAttachment(
       recipients,
-      `Daily Attendance Report – ${today}`,
-      attendanceTemplate(today),
+      `Daily Attendance Report – ${todayIST}`,
+      attendanceTemplate(todayIST),
       filePath
     );
 
-    console.log("Attendance email sent successfully");
+    console.log("✅ Evening attendance email sent successfully");
 
   } catch (err) {
-    console.error("Attendance email failed:", err);
+    console.error("❌ Evening attendance email failed:", err);
   }
 });
