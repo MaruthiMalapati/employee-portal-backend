@@ -17,7 +17,12 @@ function formatIST(date) {
     return "—";
   }
 }
-
+function istToUTC(date, hours, minutes) {
+  const utc = new Date(`${date}T00:00:00Z`);
+  utc.setUTCHours(hours - 5);
+  utc.setUTCMinutes(minutes - 30);
+  return utc;
+}
 async function generateMorningAttendanceReport(date) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Morning Attendance");
@@ -30,10 +35,14 @@ async function generateMorningAttendanceReport(date) {
   ];
 
   // IST 10:10 AM converted to UTC
-  const cutoffIST = new Date(`${date}T10:10:00`);
-  const cutoffUTC = new Date(
-    cutoffIST.toLocaleString("en-US", { timeZone: "UTC" })
-  );
+  // const cutoffIST = new Date(`${date}T10:10:00`);
+  // const cutoffUTC = new Date(
+  //   cutoffIST.toLocaleString("en-US", { timeZone: "UTC" })
+  // );
+  // 10:10 AM IST = 04:40 UTC
+// const cutoffUTC = new Date(`${date}T04:40:00Z`);
+const cutoffUTC = istToUTC(date, 10, 10); // 10:10 IST
+
 
   // All active employees
   const { data: employees, error: empErr } = await supabase

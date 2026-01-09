@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const supabase = require("../supabaseClient");
 const authenticate = require("../middleware/authMiddleware");
 const authorizeAdmin = require("../middleware/authorizeAdmin");
+const crypto = require("crypto");
 
 const router = express.Router();
 
@@ -40,6 +41,8 @@ router.post(
       }
 
       // check duplicates
+      console.log("FINAL USERNAME GOING TO DB:", username);
+
       const { data: existing } = await supabase
         .from("employees")
         .select("id")
@@ -56,6 +59,7 @@ router.post(
       const passwordHash = await bcrypt.hash(password, 10);
 
       const employeeCode = `EMP-${crypto.randomUUID().slice(0, 8)}`;
+console.log("2FINAL USERNAME GOING TO DB:", username);
 
       const { error } = await supabase.from("employees").insert({
         employee_code: employeeCode,
@@ -187,6 +191,82 @@ router.post("/delete-employee", authenticate, authorizeAdmin, async (req, res) =
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+router.get("/admin/active-sessions", authenticate, authorizeAdmin, async (req, res) => {
+  const { data } = await supabase
+    .from("login_logs")
+    .select("employee_id, login_time")
+    .is("logout_time", null);
+
+  res.json({ success: true, data });
+});
+
+
+// router.get("/admin-online-now",
+//   authenticate,
+//   authorizeAdmin,
+//   async (req, res) => {
+//     try {
+//       const { data, error } = await supabase
+//         .from("login_logs")
+//         .select(`
+//           employee_id,
+//           login_time,
+//           employees ( name, username )
+//         `)
+//         .is("logout_time", null);
+
+//       if (error) throw error;
+
+//       res.json({
+//         success: true,
+//         data
+//       });
+//     } catch (err) {
+//       console.error("Online now error:", err);
+//       res.status(500).json({
+//         success: false,
+//         message: "Failed to fetch online users"
+//       });
+//     }
+//   }
+// );
+
+// router.get("/admin-not-logged-in-today",
+//   authenticate,
+//   authorizeAdmin,
+//   async (req, res) => {
+//     try {
+//       const todayUTC = new Date().toISOString().slice(0, 10);
+
+//       const { data, error } = await supabase
+//         .from("employees")
+//         .select("id, name, username")
+//         .eq("is_active", true)
+//         .not(
+//           "id",
+//           "in",
+//           supabase
+//             .from("login_logs")
+//             .select("employee_id")
+//             .gte("login_time", `${todayUTC}T00:00:00Z`)
+//         );
+
+//       if (error) throw error;
+
+//       res.json({
+//         success: true,
+//         data
+//       });
+//     } catch (err) {
+//       console.error("Not logged in today error:", err);
+//       res.status(500).json({
+//         success: false,
+//         message: "Failed to fetch data"
+//       });
+//     }
+//   }
+// );
 
 
 
