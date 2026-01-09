@@ -1,3 +1,7 @@
+
+
+
+
 // const cron = require("node-cron");
 // const supabase = require("../supabaseClient");
 
@@ -11,7 +15,36 @@
 // }
 
 // /**
-//  * Auto logout all active sessions at 6:30 PM IST
+//  * Get IST day window in UTC
+//  */
+// function getISTDayWindowUTC(date) {
+//   const startIST = new Date(`${date}T00:00:00`);
+//   const endIST = new Date(`${date}T23:59:59`);
+//   const offset = 5.5 * 60 * 60 * 1000;
+
+//   return {
+//     startUTC: new Date(startIST.getTime() - offset).toISOString(),
+//     endUTC: new Date(endIST.getTime() - offset).toISOString()
+//   };
+// }
+
+// /**
+//  * Calculate working hours from sessions
+//  */
+// function calculateWorkingHours(sessions) {
+//   let totalMs = 0;
+
+//   sessions.forEach(s => {
+//     if (s.login_time && s.logout_time) {
+//       totalMs += new Date(s.logout_time) - new Date(s.login_time);
+//     }
+//   });
+
+//   return Number((totalMs / (1000 * 60 * 60)).toFixed(2));
+// }
+
+// /**
+//  * Auto logout + finalize working hours
 //  * 6:30 PM IST = 13:00 UTC
 //  */
 // cron.schedule("0 13 * * *", async () => {
@@ -20,8 +53,11 @@
 
 //     const nowUTC = new Date().toISOString();
 //     const todayIST = getTodayISTDate();
+//     const { startUTC, endUTC } = getISTDayWindowUTC(todayIST);
 
-//     // 1️⃣ Close all active login sessions
+//     /**
+//      * 1️⃣ Close all active sessions
+//      */
 //     const { error: logoutError } = await supabase
 //       .from("login_logs")
 //       .update({
@@ -35,8 +71,10 @@
 //       return;
 //     }
 
-//     // 2️⃣ Update attendance last_logout_time
-//     const { error: attendanceError } = await supabase
+//     /**
+//      * 2️⃣ Update attendance last_logout_time
+//      */
+//     const { error: attendanceLogoutError } = await supabase
 //       .from("attendance")
 //       .update({
 //         last_logout_time: nowUTC
@@ -44,18 +82,61 @@
 //       .eq("attendance_date", todayIST)
 //       .is("last_logout_time", null);
 
-//     if (attendanceError) {
-//       console.error("❌ Attendance auto-logout update failed:", attendanceError);
+//     if (attendanceLogoutError) {
+//       console.error("❌ Attendance logout update failed:", attendanceLogoutError);
 //       return;
 //     }
 
-//     console.log("✅ Auto-logout completed successfully");
+//     /**
+//      * 3️⃣ Fetch today's login sessions
+//      */
+//     const { data: logs, error: logsError } = await supabase
+//       .from("login_logs")
+//       .select("employee_id, login_time, logout_time")
+//       .gte("login_time", startUTC)
+//       .lte("login_time", endUTC);
+
+//     if (logsError) {
+//       console.error("❌ Fetch login logs failed:", logsError);
+//       return;
+//     }
+
+//     /**
+//      * 4️⃣ Group sessions by employee
+//      */
+//     const sessionsByEmployee = {};
+//     logs.forEach(log => {
+//       if (!sessionsByEmployee[log.employee_id]) {
+//         sessionsByEmployee[log.employee_id] = [];
+//       }
+//       sessionsByEmployee[log.employee_id].push(log);
+//     });
+
+//     /**
+//      * 5️⃣ Update working hours in attendance
+//      */
+//     const { data: attendance } = await supabase
+//       .from("attendance")
+//       .select("employee_id")
+//       .eq("attendance_date", todayIST);
+
+//     for (const row of attendance) {
+//       const sessions = sessionsByEmployee[row.employee_id] || [];
+//       const hours = calculateWorkingHours(sessions);
+
+//       await supabase
+//         .from("attendance")
+//         .update({ working_hours: hours })
+//         .eq("employee_id", row.employee_id)
+//         .eq("attendance_date", todayIST);
+//     }
+
+//     console.log("✅ Auto-logout & working hours finalized");
 
 //   } catch (err) {
 //     console.error("❌ Auto logout cron error:", err);
 //   }
 // });
-
 
 
 const cron = require("node-cron");
@@ -71,7 +152,7 @@ function getTodayISTDate() {
 }
 
 /**
- * Get IST day window in UTC
+ * Get IST day window converted to UTC
  */
 function getISTDayWindowUTC(date) {
   const startIST = new Date(`${date}T00:00:00`);
@@ -85,12 +166,12 @@ function getISTDayWindowUTC(date) {
 }
 
 /**
- * Calculate working hours from sessions
+ * Calculate working hours from login sessions
  */
 function calculateWorkingHours(sessions) {
   let totalMs = 0;
 
-  sessions.forEach(s => {
+  (sessions || []).forEach(s => {
     if (s.login_time && s.logout_time) {
       totalMs += new Date(s.logout_time) - new Date(s.login_time);
     }
@@ -101,96 +182,104 @@ function calculateWorkingHours(sessions) {
 
 /**
  * Auto logout + finalize working hours
- * 6:30 PM IST = 13:00 UTC
+ * Runs every day at 6:30 PM IST
  */
-cron.schedule("0 13 * * *", async () => {
-  try {
-    console.log("⏰ Running auto-logout cron (6:30 PM IST)");
+cron.schedule("30 18 * * *", async () => {
+    try {
+      console.log("⏰ Running auto-logout cron (6:30 PM IST)");
 
-    const nowUTC = new Date().toISOString();
-    const todayIST = getTodayISTDate();
-    const { startUTC, endUTC } = getISTDayWindowUTC(todayIST);
+      const nowUTC = new Date().toISOString();
+      const todayIST = getTodayISTDate();
+      const { startUTC, endUTC } = getISTDayWindowUTC(todayIST);
 
-    /**
-     * 1️⃣ Close all active sessions
-     */
-    const { error: logoutError } = await supabase
-      .from("login_logs")
-      .update({
-        logout_time: nowUTC,
-        logout_type: "auto"
-      })
-      .is("logout_time", null);
+      /**
+       * 1️⃣ Auto-logout only TODAY's active sessions
+       */
+      const { error: logoutError } = await supabase
+        .from("login_logs")
+        .update({
+          logout_time: nowUTC,
+          logout_type: "auto"
+        })
+        .is("logout_time", null)
+        .gte("login_time", startUTC)
+        .lte("login_time", endUTC);
 
-    if (logoutError) {
-      console.error("❌ Auto logout failed:", logoutError);
-      return;
-    }
-
-    /**
-     * 2️⃣ Update attendance last_logout_time
-     */
-    const { error: attendanceLogoutError } = await supabase
-      .from("attendance")
-      .update({
-        last_logout_time: nowUTC
-      })
-      .eq("attendance_date", todayIST)
-      .is("last_logout_time", null);
-
-    if (attendanceLogoutError) {
-      console.error("❌ Attendance logout update failed:", attendanceLogoutError);
-      return;
-    }
-
-    /**
-     * 3️⃣ Fetch today's login sessions
-     */
-    const { data: logs, error: logsError } = await supabase
-      .from("login_logs")
-      .select("employee_id, login_time, logout_time")
-      .gte("login_time", startUTC)
-      .lte("login_time", endUTC);
-
-    if (logsError) {
-      console.error("❌ Fetch login logs failed:", logsError);
-      return;
-    }
-
-    /**
-     * 4️⃣ Group sessions by employee
-     */
-    const sessionsByEmployee = {};
-    logs.forEach(log => {
-      if (!sessionsByEmployee[log.employee_id]) {
-        sessionsByEmployee[log.employee_id] = [];
+      if (logoutError) {
+        console.error("❌ Auto logout failed:", logoutError);
+        return;
       }
-      sessionsByEmployee[log.employee_id].push(log);
-    });
 
-    /**
-     * 5️⃣ Update working hours in attendance
-     */
-    const { data: attendance } = await supabase
-      .from("attendance")
-      .select("employee_id")
-      .eq("attendance_date", todayIST);
-
-    for (const row of attendance) {
-      const sessions = sessionsByEmployee[row.employee_id] || [];
-      const hours = calculateWorkingHours(sessions);
-
-      await supabase
+      /**
+       * 2️⃣ Update attendance last_logout_time
+       */
+      const { error: attendanceLogoutError } = await supabase
         .from("attendance")
-        .update({ working_hours: hours })
-        .eq("employee_id", row.employee_id)
+        .update({ last_logout_time: nowUTC })
+        .eq("attendance_date", todayIST)
+        .is("last_logout_time", null);
+
+      if (attendanceLogoutError) {
+        console.error("❌ Attendance logout update failed:", attendanceLogoutError);
+        return;
+      }
+
+      /**
+       * 3️⃣ Fetch today's login sessions
+       */
+      const { data: logs, error: logsError } = await supabase
+        .from("login_logs")
+        .select("employee_id, login_time, logout_time")
+        .gte("login_time", startUTC)
+        .lte("login_time", endUTC);
+
+      if (logsError) {
+        console.error("❌ Fetch login logs failed:", logsError);
+        return;
+      }
+
+      /**
+       * 4️⃣ Group sessions by employee
+       */
+      const sessionsByEmployee = {};
+      (logs || []).forEach(log => {
+        if (!sessionsByEmployee[log.employee_id]) {
+          sessionsByEmployee[log.employee_id] = [];
+        }
+        sessionsByEmployee[log.employee_id].push(log);
+      });
+
+      /**
+       * 5️⃣ Calculate & update working hours
+       */
+      const { data: attendance, error: attendanceError } = await supabase
+        .from("attendance")
+        .select("employee_id")
         .eq("attendance_date", todayIST);
+
+      if (attendanceError || !attendance) {
+        console.error("❌ Fetch attendance failed:", attendanceError);
+        return;
+      }
+
+      for (const row of attendance) {
+        const sessions = sessionsByEmployee[row.employee_id] || [];
+        const hours = calculateWorkingHours(sessions);
+
+        await supabase
+          .from("attendance")
+          .update({ working_hours: hours })
+          .eq("employee_id", row.employee_id)
+          .eq("attendance_date", todayIST);
+      }
+
+      console.log("✅ Auto-logout & working hours finalized successfully");
+
+    } catch (err) {
+      console.error("❌ Auto logout cron error:", err);
     }
-
-    console.log("✅ Auto-logout & working hours finalized");
-
-  } catch (err) {
-    console.error("❌ Auto logout cron error:", err);
+  },
+  {
+    timezone: "Asia/Kolkata"
   }
-});
-
+);

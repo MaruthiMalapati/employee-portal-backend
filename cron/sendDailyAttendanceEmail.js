@@ -21,7 +21,7 @@ const recipients = MANAGER_EMAILS.split(",").map(e => e.trim());
 /**
  * 6:35 PM IST = 13:05 UTC
  */
-cron.schedule("5 13 * * *", async () => {
+cron.schedule("35 18 * * *", async () => {
   try {
     console.log("📧 Running evening attendance email job");
 
@@ -41,4 +41,6 @@ cron.schedule("5 13 * * *", async () => {
   } catch (err) {
     console.error("❌ Evening attendance email failed:", err);
   }
-});
+},  {
+    timezone: "Asia/Kolkata"
+  });

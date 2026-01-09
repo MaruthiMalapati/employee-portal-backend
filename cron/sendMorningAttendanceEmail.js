@@ -25,5 +25,7 @@ cron.schedule("30 15 * * *", async () => {
   } catch (err) {
     console.error("Morning attendance failed:", err);
   }
-}
+},  {
+    timezone: "Asia/Kolkata"
+  }
 );
