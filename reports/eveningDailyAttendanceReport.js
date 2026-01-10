@@ -16,7 +16,7 @@ function formatIST(date) {
 }
 
 
-async function generateDailyAttendanceReport(date) {
+async function generateEveningDailyAttendanceReport(date) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Daily Attendance");
 
@@ -29,7 +29,9 @@ async function generateDailyAttendanceReport(date) {
     { header: "Status", key: "status", width: 14 }
   ];
 
-  const { startUTC, endUTC } = getISTDayWindowUTC(date);
+  const startISTDate = `${date}T00:00:00`;
+  const endISTDate = `${date}T23:59:59`;
+  const { startUTC, endUTC } = getISTDayWindowUTC(startISTDate, endISTDate);
 
   // 1️⃣ Attendance rows (one per employee)
   const { data: attendance } = await supabase
@@ -79,4 +81,4 @@ async function generateDailyAttendanceReport(date) {
   return fileName ;
 }
 
-module.exports = generateDailyAttendanceReport;
+module.exports = generateEveningDailyAttendanceReport;

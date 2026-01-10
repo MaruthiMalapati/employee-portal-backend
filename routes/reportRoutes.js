@@ -1,7 +1,7 @@
 const express = require("express");
 const authenticate = require("../middleware/authMiddleware");
 const authorizeAdmin = require("../middleware/authorizeAdmin");
-const generateReport = require("../reports/dailyAttendanceReport");
+const eveningDailyAttendanceReport = require("../reports/eveningDailyAttendanceReport");
 
 const router = express.Router();
 
@@ -11,7 +11,7 @@ router.get( "/daily-attendance", authenticate, authorizeAdmin, async (req, res) 
         req.query.date ||
         new Date().toISOString().split("T")[0]; // today
 
-      const filePath = await generateReport(date);
+      const filePath = await eveningDailyAttendanceReport(date);
 
       res.download(filePath);
 

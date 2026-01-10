@@ -3,7 +3,7 @@ const cors = require("cors");
 require("dotenv").config();
 const adminRoutes = require("./routes/adminRoutes");
 require("./cron/autoLogout");
-require("./cron/sendDailyAttendanceEmail");
+require("./cron/sendEveningDailyAttendanceEmail");
 require("./cron/sendMorningAttendanceEmail");
 
 const passwordRoutes = require("./routes/passwordRoutes");

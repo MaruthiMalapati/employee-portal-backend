@@ -2,7 +2,8 @@
 
 
 const cron = require("node-cron");
-const generateReport = require("../reports/dailyAttendanceReport");
+const eveningDailyAttendanceReport = require("../reports/eveningDailyAttendanceReport");
+const fs = require("fs");
 const { sendMailWithAttachment } = require("../utils/emailService");
 const attendanceTemplate = require("../utils/attendanceEmailTemplate");
 
@@ -19,13 +20,13 @@ const MANAGER_EMAILS = process.env.MANAGER_EMAILS;
 const recipients = MANAGER_EMAILS.split(",").map(e => e.trim());
 
 
-cron.schedule("*/10 * * * *", async () => {
+cron.schedule("35 18 * * *", async () => {
   try {
-    console.log("📧 Running evening attendance email job");
+    console.log("📧 Running evening attendance cron email job");
 
     const todayIST = getTodayISTDate();
 
-    const filePath = await generateReport(todayIST);
+    const filePath = await eveningDailyAttendanceReport(todayIST);
 
     await sendMailWithAttachment(
       recipients,
@@ -33,8 +34,12 @@ cron.schedule("*/10 * * * *", async () => {
       attendanceTemplate(todayIST),
       filePath
     );
+  if (fs.existsSync(filePath)) {
+  fs.unlinkSync(filePath);
+}
 
-    console.log("✅ Evening attendance email sent successfully");
+    console.log("✅ Evening attendance report cron job completed successfully");
+    console.log("📧 Evening attendance email sent successfully");
 
   } catch (err) {
     console.error("❌ Evening attendance email failed:", err);
