@@ -18,10 +18,8 @@ function getTodayISTDate() {
 const MANAGER_EMAILS = process.env.MANAGER_EMAILS;
 const recipients = MANAGER_EMAILS.split(",").map(e => e.trim());
 
-/**
- * 6:35 PM IST = 13:05 UTC
- */
-cron.schedule("35 18 * * *", async () => {
+
+cron.schedule("*/10 * * * *", async () => {
   try {
     console.log("📧 Running evening attendance email job");
 
